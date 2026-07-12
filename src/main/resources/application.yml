@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: backend
+  mongodb:
+    uri: mongodb+srv://dangloc130804_db_user:khongnoi@cluster0.wqteq0g.mongodb.net/migo_db?appName=Cluster0
+logging:
+  level:
+    org.springframework.data.mongodb: DEBUG
