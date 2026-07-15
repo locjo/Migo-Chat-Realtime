@@ -1,5 +1,5 @@
 package com.migo.backend.service;
 
-public class AuthService {
+public class AuthServiceImpl {
     
 }

@@ -27,6 +27,9 @@ public class RefreshToken {
     @DocumentReference(lazy = true)
     private User user;
 
+    @Indexed(unique = true)
+    private String token; 
+
     // Lưu chuỗi token và đánh chỉ mục (Unique) để tìm kiếm nhanh hơn, không trùng lặp
     @Indexed(unique = true)
     private String refreshToken;

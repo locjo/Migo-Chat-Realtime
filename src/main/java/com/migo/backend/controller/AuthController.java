@@ -1,24 +1,25 @@
 package com.migo.backend.controller;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
 import com.migo.backend.dto.request.LoginRequest;
 import com.migo.backend.dto.request.RegisterRequest;
 import com.migo.backend.entity.User;
+import com.migo.backend.entity.RefreshToken;
 import com.migo.backend.repository.UserRepository;
+import com.migo.backend.repository.RefreshTokenRepository;
 import com.migo.backend.security.JwtTokenProvider;
-
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -28,98 +29,92 @@ public class AuthController {
     private UserRepository userRepository;
 
     @Autowired
-    private PasswordEncoder passwordEncoder; // Tiêm từ SecurityConfig để mã hóa mật khẩu
+    private RefreshTokenRepository refreshTokenRepository; // Inject thêm Repository của Refresh Token
 
     @Autowired
-    private JwtTokenProvider jwtTokenProvider; // Tiêm từ thư mục security để sinh Token thật
+    private PasswordEncoder passwordEncoder;
 
-    // 1. ROUTE ĐĂNG KÝ TÀI KHOẢN (Sử dụng RegisterRequest)
+    @Autowired
+    private JwtTokenProvider jwtTokenProvider;
+
+    // 1. ROUTE ĐĂNG KÝ (Giữ nguyên như cũ)
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody RegisterRequest request) {
-        
-        // Dùng hàm existsBy để kiểm tra trùng nhanh và tối ưu bộ nhớ
         if (userRepository.existsByUsername(request.getUsername().trim().toLowerCase())) {
-            Map<String, String> response = new HashMap<>();
-            response.put("error", "Username này đã được sử dụng!");
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Username này đã được sử dụng!"));
         }
-
         if (userRepository.existsByEmail(request.getEmail().trim().toLowerCase())) {
-            Map<String, String> response = new HashMap<>();
-            response.put("error", "Email này đã được sử dụng!");
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Email này đã được sử dụng!"));
         }
 
-        // Chuyển đổi dữ liệu từ DTO Request sang Entity để lưu xuống MongoDB
         User user = new User();
         user.setUsername(request.getUsername().trim().toLowerCase());
         user.setEmail(request.getEmail().trim().toLowerCase());
         user.setDisplayName(request.getDisplayName());
+        user.setHashedPassword(passwordEncoder.encode(request.getPassword()));
         
-        // 🔒 Thực hiện băm mật khẩu bằng BCrypt trước khi lưu
-        String encodedPassword = passwordEncoder.encode(request.getPassword());
-        user.setHashedPassword(encodedPassword); 
-
-        // Lưu vào MongoDB Atlas
         User savedUser = userRepository.save(user);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("message", "Đăng ký tài khoản thành công!");
-        response.put("userId", savedUser.getId());
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("message", "Đăng ký thành công!", "userId", savedUser.getId()));
     }
 
-    // 2. ROUTE ĐĂNG NHẬP (Sử dụng LoginRequest)
+    // 2. ROUTE ĐĂNG NHẬP (Cập nhật trả về Access Token qua Body và Refresh Token qua Cookie)
     @PostMapping("/login")
     public ResponseEntity<?> loginUser(@Valid @RequestBody LoginRequest request) {
         String username = request.getUsername().trim().toLowerCase();
         String password = request.getPassword();
 
-        // Tìm kiếm User theo username trong DB
         return userRepository.findByUsername(username)
                 .map(user -> {
-                    // 🔒 Sử dụng passwordEncoder.matches để đối chiếu mật khẩu đã băm
                     if (passwordEncoder.matches(password, user.getHashedPassword())) {
                         
-                        // 🔑 Sinh ra chuỗi JWT Token xịn từ file JwtTokenProvider của bạn
-                        String token = jwtTokenProvider.generateToken(user.getUsername());
+                        // 2.1 Sinh Access Token (hết hạn nhanh)
+                        String accessToken = jwtTokenProvider.generateToken(user.getUsername());
                         
+                        // 2.2 Tạo Refresh Token và lưu vào MongoDB Atlas
+                        RefreshToken refreshToken = new RefreshToken();
+                        refreshToken.setToken(UUID.randomUUID().toString()); // Tạo chuỗi ngẫu nhiên duy nhất
+                        refreshToken.setUser(user);
+                        refreshToken.setExpiryDate(Instant.now().plusSeconds(7 * 24 * 60 * 60)); // Hết hạn sau 7 ngày
+                        
+                        // Xóa các Refresh Token cũ của user này trước khi lưu token mới (tránh rác DB)
+                        refreshTokenRepository.deleteByUser(user);
+                        refreshTokenRepository.save(refreshToken);
+
+                        // 2.3 Bọc Refresh Token vào HttpOnly Cookie
+                        ResponseCookie cookie = jwtTokenProvider.createRefreshTokenCookie(refreshToken.getToken());
+
+                        // 2.4 Đóng gói dữ liệu trả về cho Frontend
                         Map<String, Object> response = new HashMap<>();
                         response.put("message", "Đăng nhập thành công!");
                         response.put("username", user.getUsername());
                         response.put("displayName", user.getDisplayName());
-                        response.put("token", token); // Trả token thật về cho Flutter/React
-                        
-                        return ResponseEntity.ok(response);
+                        response.put("accessToken", accessToken); // 👈 Trả thẳng Access Token trong JSON
+
+                        return ResponseEntity.ok()
+                                .header(HttpHeaders.SET_COOKIE, cookie.toString()) // 👈 Dập cookie vào header
+                                .body(response);
                     } else {
-                        Map<String, String> response = new HashMap<>();
-                        response.put("error", "Mật khẩu không chính xác!");
-                        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+                        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Mật khẩu không chính xác!"));
                     }
                 })
-                .orElseGet(() -> {
-                    Map<String, String> response = new HashMap<>();
-                    response.put("error", "Tài khoản không tồn tại!");
-                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
-                });
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Tài khoản không tồn tại!")));
     }
-    // 3. ROUTE ĐĂNG XUẤT TÀI KHOẢN (POST: /api/auth/logout)
+
+    // 3. ROUTE ĐĂNG XUẤT (Xóa token dưới DB và xóa cookie ở trình duyệt)
     @PostMapping("/logout")
-    public ResponseEntity<?> logoutUser(@RequestBody Map<String, String> logoutRequest) {
-        String username = logoutRequest.get("username");
+    public ResponseEntity<?> logoutUser(@CookieValue(name = "migo_refresh_token", required = false) String refreshTokenString) {
         
-        if (username != null) {
-            // 🛠️ HÀNH ĐỘNG HỦY PHIÊN:
-            // Bạn sẽ gọi xuống RefreshTokenRepository (hoặc Service) để xóa bỏ bản ghi token của user này dưới DB.
-            // Ví dụ: refreshTokenService.deleteByUsername(username);
-            
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Đăng xuất thành công! Hãy xóa token ở phía Frontend.");
-            return ResponseEntity.ok(response);
+        if (refreshTokenString != null) {
+            // Tìm và xóa Refresh Token này dưới MongoDB Atlas để vô hiệu hóa hoàn toàn
+            refreshTokenRepository.findByToken(refreshTokenString)
+                    .ifPresent(token -> refreshTokenRepository.delete(token));
         }
 
-        Map<String, String> response = new HashMap<>();
-        response.put("error", "Yêu cầu đăng xuất không hợp lệ!");
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        // Tạo cookie rỗng có maxAge = 0 để xóa cookie phía Client
+        ResponseCookie cleanCookie = jwtTokenProvider.cleanRefreshTokenCookie();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cleanCookie.toString())
+                .body(Map.of("message", "Đăng xuất thành công!"));
     }
 }

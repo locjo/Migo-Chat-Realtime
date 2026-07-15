@@ -8,19 +8,21 @@ import lombok.Data;
 
 @Data
 public class RegisterRequest {
-    @NotBlank(message = "Username không được để trống")
-    @Size(min = 3, max = 30, message = "Username từ 3 đến 30 ký tự")
-    @Pattern(regexp = "^[a-z0-9_.]+$", message = "Username không hợp lệ")
+
+    // 🌟 Thay "message" bằng tên chính xác của Enum Key trong ErrorCode.java
+    @NotBlank(message = "USERNAME_INVALID") 
+    @Size(min = 3, max = 30, message = "USERNAME_INVALID")
+    @Pattern(regexp = "^[a-z0-9_.]+$", message = "USERNAME_INVALID")
     private String username;
 
-    @NotBlank(message = "Email không được để trống")
-    @Email(message = "Định dạng email không hợp lệ")
+    @NotBlank(message = "INVALID_KEY") // Nếu trống thì báo Invalid Key hoặc bạn tạo thêm một Enum EMAIL_INVALID
+    @Email(message = "INVALID_KEY")
     private String email;
 
-    @NotBlank(message = "Mật khẩu không được để trống")
-    @Size(min = 6, message = "Mật khẩu phải từ 6 ký tự trở lên")
+    @NotBlank(message = "INVALID_PASSWORD")
+    @Size(min = 6, message = "INVALID_PASSWORD") // Ở DTO bạn chặn 6, nhưng Enum ghi 8 thì bạn nên đồng bộ nhé!
     private String password;
 
-    @NotBlank(message = "Tên hiển thị không được để trống")
+    @NotBlank(message = "INVALID_KEY")
     private String displayName;
 }
