@@ -48,6 +48,14 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Cho phép mở tự do hoàn toàn các API liên quan đến Login/Register (Ai cũng vào được)
                 .requestMatchers("/api/auth/**").permitAll()
+
+                // 2. Chỉ tài khoản ADMIN mới được truy cập các API bắt đầu bằng /api/admin/**
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                
+                // 3. Tài khoản ADMIN hoặc USER đều có thể vào cụm /api/chat/**
+                .requestMatchers("/api/chat/**").hasAnyRole("USER", "ADMIN")
+
+                .requestMatchers("/api/users/me").authenticated() // 🌟 BẮT BUỘC ĐÃ ĐĂNG NHẬP (Phải gửi kèm Token)
                 
                 // ⚠️ QUAN TRỌNG: Mở tự do cho cổng kết nối Socket.IO (Thường là đường dẫn có chứa socket.io)
                 .requestMatchers("/socket.io/**").permitAll()

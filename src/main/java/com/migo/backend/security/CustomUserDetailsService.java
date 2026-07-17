@@ -3,6 +3,7 @@ package com.migo.backend.security;
 import java.util.Collections;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -23,12 +24,18 @@ public class CustomUserDetailsService implements UserDetailsService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Không tìm thấy người dùng với username: " + username));
 
-        // 2. Chuyển đổi Object User (của MongoDB) thành Object UserDetails (của Spring Security)
+        // 2. Lấy role từ DB và thêm tiền tố "ROLE_" cho đúng chuẩn Spring Security
+        // Nếu user.getRole() chưa có hoặc null, mặc định sẽ gán vai trò là "USER"
+        String roleName = user.getRole() != null ? user.getRole() : "USER";
+        SimpleGrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + roleName);
+
+
+        // 3. Chuyển đổi Object User (của MongoDB) thành Object UserDetails (của Spring Security)
         // Cấu trúc mặc định của Spring Security yêu cầu: Username, Password, và Danh sách quyền hạn (Authorities)
         return new org.springframework.security.core.userdetails.User(
                 user.getUsername(),
                 user.getHashedPassword(),
-                Collections.emptyList() // Hiện tại app chat cơ bản chưa phân quyền (Admin/User) nên để danh sách rỗng
+                Collections.singletonList(authority)
         );
     }
 }

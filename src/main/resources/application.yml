@@ -3,6 +3,11 @@ spring:
     name: backend
   mongodb:
     uri: mongodb+srv://dangloc130804_db_user:khongnoi@cluster0.wqteq0g.mongodb.net/migo_db?appName=Cluster0
+
+jwt:
+  secret: "zY89pW2qXvD7mK4nB3hJ6fG1sT5rC9vN2bH4xM7pL9qK3wJ5fD2sA8gH6fJ4kL2m" # Chuỗi dài tối thiểu 256-bit (32 ký tự)
+  
 logging:
   level:
     org.springframework.data.mongodb: DEBUG
+  

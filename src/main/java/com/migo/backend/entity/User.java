@@ -30,6 +30,9 @@ public class User {
     @Indexed(unique = true) // Đảm bảo email là duy nhất dưới DB
     private String email;
 
+    @Field("role")
+    private String role = "USER";
+
     @Field("avatarUrl")
     private String avatarUrl;
 

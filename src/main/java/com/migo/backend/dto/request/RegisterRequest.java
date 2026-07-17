@@ -20,7 +20,7 @@ public class RegisterRequest {
     private String email;
 
     @NotBlank(message = "INVALID_PASSWORD")
-    @Size(min = 6, message = "INVALID_PASSWORD") // Ở DTO bạn chặn 6, nhưng Enum ghi 8 thì bạn nên đồng bộ nhé!
+    @Size(min = 8, message = "INVALID_PASSWORD") 
     private String password;
 
     @NotBlank(message = "INVALID_KEY")

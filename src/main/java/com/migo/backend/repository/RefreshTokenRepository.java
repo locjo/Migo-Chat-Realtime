@@ -16,4 +16,6 @@ public interface RefreshTokenRepository extends MongoRepository<RefreshToken, St
     // 2. Xóa toàn bộ các Refresh Token liên kết với một User cụ thể
     // Hàm này cực kỳ quan trọng để đảm bảo mỗi user chỉ có duy nhất 1 phiên đăng nhập hợp lệ (tránh rác DB)
     void deleteByUser(User user);
+
+    Optional<RefreshToken> findByUser(User user);
 }

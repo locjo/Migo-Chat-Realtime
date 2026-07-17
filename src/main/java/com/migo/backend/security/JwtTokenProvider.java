@@ -1,22 +1,35 @@
 package com.migo.backend.security;
 
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.security.Keys;
-import org.springframework.http.ResponseCookie;
-import org.springframework.stereotype.Component;
-
 import java.security.Key;
 import java.util.Date;
 import java.util.function.Function;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseCookie;
+import org.springframework.stereotype.Component;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
+
 @Component // Đánh dấu là 1 Bean để Spring quản lý và cho phép @Autowired ở AuthController
 public class JwtTokenProvider {
 
-    // 1. Tạo khóa bí mật an toàn cho thuật toán HS256
-    private final Key SECRET_KEY = Keys.secretKeyFor(SignatureAlgorithm.HS256);
+    // 1. Spring tự động nạp chuỗi secret từ file cấu hình vào đây
+    @Value("${jwt.secret}")
+    private String secretString;
 
+    private Key SECRET_KEY;
+
+    // 2. Hàm này chạy ngay sau khi Bean được khởi tạo để chuyển chuỗi string thành Key Object
+    @PostConstruct
+    public void init() {
+        this.SECRET_KEY = Keys.hmacShaKeyFor(Decoders.BASE64.decode(
+                io.jsonwebtoken.io.Encoders.BASE64.encode(secretString.getBytes())
+        ));
+    }
     // 2. Cấu hình thời gian sống của Access Token (1 giờ tính bằng mili giây)
     // Access Token nên có thời gian sống ngắn để giảm thiểu rủi ro nếu bị lộ
     private final long ACCESS_TOKEN_EXPIRATION = 1 * 60 * 60 * 1000; 

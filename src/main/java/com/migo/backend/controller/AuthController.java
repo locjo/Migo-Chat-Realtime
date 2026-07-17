@@ -1,7 +1,9 @@
 package com.migo.backend.controller;
 
+import com.migo.backend.dto.request.ApiResponse;
 import com.migo.backend.dto.request.LoginRequest;
 import com.migo.backend.dto.request.RegisterRequest;
+import com.migo.backend.dto.response.AuthResponse;
 import com.migo.backend.entity.User;
 import com.migo.backend.entity.RefreshToken;
 import com.migo.backend.repository.UserRepository;
@@ -37,6 +39,9 @@ public class AuthController {
     @Autowired
     private JwtTokenProvider jwtTokenProvider;
 
+    @Autowired
+    private com.migo.backend.service.AuthService authService; // Inject Service của bạn để gọi
+
     // 1. ROUTE ĐĂNG KÝ (Giữ nguyên như cũ)
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody RegisterRequest request) {
@@ -59,45 +64,32 @@ public class AuthController {
 
     // 2. ROUTE ĐĂNG NHẬP (Cập nhật trả về Access Token qua Body và Refresh Token qua Cookie)
     @PostMapping("/login")
-    public ResponseEntity<?> loginUser(@Valid @RequestBody LoginRequest request) {
-        String username = request.getUsername().trim().toLowerCase();
-        String password = request.getPassword();
+    public ResponseEntity<ApiResponse<AuthResponse>> loginUser(@Valid @RequestBody LoginRequest request) {
+        
+        // 1. Gọi Service thực hiện nghiệp vụ đăng nhập & sinh token
+        AuthResponse authResponse = authService.login(request);
 
-        return userRepository.findByUsername(username)
-                .map(user -> {
-                    if (passwordEncoder.matches(password, user.getHashedPassword())) {
-                        
-                        // 2.1 Sinh Access Token (hết hạn nhanh)
-                        String accessToken = jwtTokenProvider.generateToken(user.getUsername());
-                        
-                        // 2.2 Tạo Refresh Token và lưu vào MongoDB Atlas
-                        RefreshToken refreshToken = new RefreshToken();
-                        refreshToken.setToken(UUID.randomUUID().toString()); // Tạo chuỗi ngẫu nhiên duy nhất
-                        refreshToken.setUser(user);
-                        refreshToken.setExpiryDate(Instant.now().plusSeconds(7 * 24 * 60 * 60)); // Hết hạn sau 7 ngày
-                        
-                        // Xóa các Refresh Token cũ của user này trước khi lưu token mới (tránh rác DB)
-                        refreshTokenRepository.deleteByUser(user);
-                        refreshTokenRepository.save(refreshToken);
+        // 2. Lấy Refresh Token vừa lưu dưới DB lên để bọc vào HttpOnly Cookie
+        // (Tìm theo username vì mỗi user tại một thời điểm chỉ giữ 1 Refresh Token duy nhất)
+        // 1. Tìm User từ database trước bằng username (vì authResponse có chứa username)
+        User user = userRepository.findByUsername(authResponse.getUsername())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng"));
 
-                        // 2.3 Bọc Refresh Token vào HttpOnly Cookie
-                        ResponseCookie cookie = jwtTokenProvider.createRefreshTokenCookie(refreshToken.getToken());
+        // 2. 🌟 Truyền trực tiếp đối tượng `user` vào hàm findByUser mới cập nhật
+        RefreshToken refreshToken = refreshTokenRepository.findByUser(user)
+                .orElseThrow(() -> new RuntimeException("Lỗi hệ thống khi khởi tạo phiên đăng nhập"));
 
-                        // 2.4 Đóng gói dữ liệu trả về cho Frontend
-                        Map<String, Object> response = new HashMap<>();
-                        response.put("message", "Đăng nhập thành công!");
-                        response.put("username", user.getUsername());
-                        response.put("displayName", user.getDisplayName());
-                        response.put("accessToken", accessToken); // 👈 Trả thẳng Access Token trong JSON
+        ResponseCookie cookie = jwtTokenProvider.createRefreshTokenCookie(refreshToken.getToken());
 
-                        return ResponseEntity.ok()
-                                .header(HttpHeaders.SET_COOKIE, cookie.toString()) // 👈 Dập cookie vào header
-                                .body(response);
-                    } else {
-                        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Mật khẩu không chính xác!"));
-                    }
-                })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Tài khoản không tồn tại!")));
+        // 3. Đóng gói kết quả gửi về cho Frontend
+        ApiResponse<AuthResponse> apiResponse = new ApiResponse<>();
+        apiResponse.setCode(1000);
+        apiResponse.setMessage("Đăng nhập thành công!");
+        apiResponse.setResult(authResponse);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString()) // Đính kèm cookie an toàn
+                .body(apiResponse);
     }
 
     // 3. ROUTE ĐĂNG XUẤT (Xóa token dưới DB và xóa cookie ở trình duyệt)
